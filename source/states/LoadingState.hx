@@ -15,6 +15,7 @@ import flash.media.Sound;
 
 import backend.Song;
 import backend.StageData;
+import backend.ScriptPreloadCache;
 import objects.Character;
 
 import sys.thread.Thread;
@@ -343,13 +344,23 @@ class LoadingState extends MusicBeatState
 
 	public static function checkLoaded():Bool
 	{
+		var bitmapsToCache:Map<String, BitmapData> = [];
+		var bitmapKeysToCache:Map<String, String> = [];
+		if (mutex != null) mutex.acquire();
 		for (key => bitmap in requestedBitmaps)
 		{
-			if (bitmap != null && Paths.cacheBitmap(originalBitmapKeys.get(key), bitmap) != null) {} //trace('finished preloading image $key');
-			else trace('failed to cache image $key');
+			bitmapsToCache.set(key, bitmap);
+			bitmapKeysToCache.set(key, originalBitmapKeys.get(key));
 		}
 		requestedBitmaps.clear();
 		originalBitmapKeys.clear();
+		if (mutex != null) mutex.release();
+
+		for (key => bitmap in bitmapsToCache)
+		{
+			if (bitmap != null && Paths.cacheBitmap(bitmapKeysToCache.get(key), bitmap) != null) {} //trace('finished preloading image $key');
+			else trace('failed to cache image $key');
+		}
 		// trace('we checked if loaded');
 		return (loaded >= loadMax && initialThreadCompleted);
 	}
@@ -399,11 +410,179 @@ class LoadingState extends MusicBeatState
 	static var soundsToPrepare:Array<String> = [];
 	static var musicToPrepare:Array<String> = [];
 	static var songsToPrepare:Array<String> = [];
+	static var scriptsToPrepare:Array<String> = [];
+	static var queuedImages:Map<String, Bool> = [];
+	static var queuedSounds:Map<String, Bool> = [];
+	static var queuedMusic:Map<String, Bool> = [];
+	static var queuedSongs:Map<String, Bool> = [];
+	static var queuedScripts:Map<String, Bool> = [];
+	static var prepareMutex:Mutex = new Mutex();
+
+	static function resetPrepareQueues():Void
+	{
+		imagesToPrepare = [];
+		soundsToPrepare = [];
+		musicToPrepare = [];
+		songsToPrepare = [];
+		scriptsToPrepare = [];
+		queuedImages = [];
+		queuedSounds = [];
+		queuedMusic = [];
+		queuedSongs = [];
+		queuedScripts = [];
+	}
+
+	static function queuePreload(arr:Array<String>, queued:Map<String, Bool>, key:String):Void
+	{
+		if (key == null) return;
+
+		var trimmed:String = key.trim();
+		if (trimmed.length < 1) return;
+
+		prepareMutex.acquire();
+		if (!queued.exists(trimmed))
+		{
+			queued.set(trimmed, true);
+			arr.push(trimmed);
+		}
+		prepareMutex.release();
+	}
+
+	inline static function queueImage(key:String):Void
+		queuePreload(imagesToPrepare, queuedImages, key);
+
+	inline static function queueSound(key:String):Void
+		queuePreload(soundsToPrepare, queuedSounds, key);
+
+	inline static function queueMusic(key:String):Void
+		queuePreload(musicToPrepare, queuedMusic, key);
+
+	inline static function queueSong(key:String):Void
+		queuePreload(songsToPrepare, queuedSongs, key);
+
+	inline static function queueScript(key:String):Void
+		queuePreload(scriptsToPrepare, queuedScripts, ScriptPreloadCache.normalize(key));
+
+	static function queueScriptIfExists(scriptFile:String):Void
+	{
+		#if sys
+		if (scriptFile == null || scriptFile.length < 1)
+			return;
+
+		#if MODS_ALLOWED
+		var scriptToLoad:String = Paths.modFolders(scriptFile);
+		if (!FileSystem.exists(scriptToLoad))
+			scriptToLoad = Paths.getSharedPath(scriptFile);
+		#else
+		var scriptToLoad:String = Paths.getSharedPath(scriptFile);
+		#end
+
+		if (FileSystem.exists(scriptToLoad))
+			queueScript(scriptToLoad);
+		#end
+	}
+
+	static function queueLuaAndHScript(scriptFile:String):Void
+	{
+		#if LUA_ALLOWED
+		queueScriptIfExists('$scriptFile.lua');
+		#end
+		#if HSCRIPT_ALLOWED
+		queueScriptIfExists('$scriptFile.hx');
+		#end
+	}
+
+	static function queueScriptsInFolder(folderName:String):Void
+	{
+		#if sys
+		for (folder in Mods.directoriesWithFile(Paths.getSharedPath(), folderName))
+		{
+			var files:Array<String> = ScriptPreloadCache.preloadDirectory(folder);
+			for (file in files)
+			{
+				var lower:String = file.toLowerCase();
+				#if LUA_ALLOWED
+				if (lower.endsWith('.lua'))
+					queueScript(folder + file);
+				#end
+				#if HSCRIPT_ALLOWED
+				if (lower.endsWith('.hx'))
+					queueScript(folder + file);
+				#end
+			}
+		}
+		#end
+	}
+
+	static function queueCharacterScripts(name:String):Void
+	{
+		if (name != null && name.length > 0)
+			queueLuaAndHScript('characters/$name');
+	}
+
+	static function queueChartScriptHooks(song:SwagSong):Void
+	{
+		if (song == null)
+			return;
+
+		var noteTypes:Map<String, Bool> = [];
+		var events:Map<String, Bool> = [];
+
+		if (song.notes != null)
+		{
+			for (section in song.notes)
+			{
+				if (section == null || section.sectionNotes == null)
+					continue;
+
+				for (note in section.sectionNotes)
+				{
+					try
+					{
+						var noteType:String = !Std.isOfType(note[3], String) ? Note.defaultNoteTypes[note[3]] : note[3];
+						if (noteType != null && noteType.length > 0)
+							noteTypes.set(noteType, true);
+					}
+					catch(e:Dynamic) {}
+				}
+			}
+		}
+
+		if (song.events != null)
+		{
+			for (event in song.events)
+			{
+				try
+				{
+					for (i in 0...event[1].length)
+					{
+						var eventName:String = event[1][i][0];
+						if (eventName != null && eventName.length > 0)
+						{
+							events.set(eventName, true);
+							if (eventName == 'Change Character')
+								queueCharacterScripts(event[1][i][2]);
+						}
+					}
+				}
+				catch(e:Dynamic) {}
+			}
+		}
+
+		for (noteType in noteTypes.keys())
+			queueLuaAndHScript('custom_notetypes/$noteType');
+		for (eventName in events.keys())
+			queueLuaAndHScript('custom_events/$eventName');
+	}
+
 	public static function prepare(images:Array<String> = null, sounds:Array<String> = null, music:Array<String> = null)
 	{
-		if (images != null) imagesToPrepare = imagesToPrepare.concat(images);
-		if (sounds != null) soundsToPrepare = soundsToPrepare.concat(sounds);
-		if (music != null) musicToPrepare = musicToPrepare.concat(music);
+		if (images != null)
+			for (image in images) queueImage(image);
+		if (sounds != null)
+			for (sound in sounds) queueSound(sound);
+		if (music != null)
+			for (track in music) queueMusic(track);
 	}
 
 	static var initialThreadCompleted:Bool = true;
@@ -423,10 +602,7 @@ class LoadingState extends MusicBeatState
 	{
 		if(PlayState.SONG == null)
 		{
-			imagesToPrepare = [];
-			soundsToPrepare = [];
-			musicToPrepare = [];
-			songsToPrepare = [];
+			resetPrepareQueues();
 			loaded = 0;
 			loadMax = 0;
 			initialThreadCompleted = true;
@@ -435,23 +611,37 @@ class LoadingState extends MusicBeatState
 		}
 
 		_startPool();
-		imagesToPrepare = [];
-		soundsToPrepare = [];
-		musicToPrepare = [];
-		songsToPrepare = [];
+		resetPrepareQueues();
+		ScriptPreloadCache.clear();
 
 		initialThreadCompleted = false;
 		var threadsCompleted:Int = 0;
 		var threadsMax:Int = 0;
-		function completedThread()
+		var startedThreads:Bool = false;
+		function finalizePrepareIfReady()
 		{
-			threadsCompleted++;
-			if(threadsCompleted == threadsMax)
+			var shouldStartThreads:Bool = false;
+			prepareMutex.acquire();
+			if(!startedThreads && threadsCompleted == threadsMax)
+			{
+				startedThreads = true;
+				shouldStartThreads = true;
+			}
+			prepareMutex.release();
+
+			if(shouldStartThreads)
 			{
 				clearInvalids();
 				startThreads();
 				initialThreadCompleted = true;
 			}
+		}
+		function completedThread()
+		{
+			prepareMutex.acquire();
+			threadsCompleted++;
+			prepareMutex.release();
+			finalizePrepareIfReady();
 		}
 
 		var song:SwagSong = PlayState.SONG;
@@ -463,14 +653,14 @@ class LoadingState extends MusicBeatState
 	
 			var customSkin:String = noteSkin + Note.getNoteSkinPostfix();
 			if(Paths.fileExists('images/$customSkin.png', IMAGE)) noteSkin = customSkin;
-			imagesToPrepare.push(noteSkin);
+			queueImage(noteSkin);
 			//
 
 			// LOAD NOTE SPLASH IMAGE
 			var noteSplash:String = NoteSplash.defaultNoteSplash;
 			if(PlayState.SONG.splashSkin != null && PlayState.SONG.splashSkin.length > 0) noteSplash = PlayState.SONG.splashSkin;
 			else noteSplash += NoteSplash.getSplashSkinPostfix();
-			imagesToPrepare.push(noteSplash);
+			queueImage(noteSplash);
 
 			try
 			{
@@ -487,9 +677,6 @@ class LoadingState extends MusicBeatState
 
 				if(json != null)
 				{
-					var imgs:Array<String> = [];
-					var snds:Array<String> = [];
-					var mscs:Array<String> = [];
 					for (asset in Reflect.fields(json))
 					{
 						var filters:Int = Reflect.field(json, asset);
@@ -498,14 +685,13 @@ class LoadingState extends MusicBeatState
 						if(filters < 0 || StageData.validateVisibility(filters))
 						{
 							if(asset.startsWith('images/'))
-								imgs.push(asset.substr('images/'.length));
+								queueImage(asset.substr('images/'.length));
 							else if(asset.startsWith('sounds/'))
-								snds.push(asset.substr('sounds/'.length));
+								queueSound(asset.substr('sounds/'.length));
 							else if(asset.startsWith('music/'))
-								mscs.push(asset.substr('music/'.length));
+								queueMusic(asset.substr('music/'.length));
 						}
 					}
-					prepare(imgs, snds, mscs);
 				}
 			}
 			catch(e:Dynamic) {}
@@ -516,11 +702,13 @@ class LoadingState extends MusicBeatState
 				song.stage = StageData.vanillaSongStage(folder);
 
 			var stageData:StageFile = StageData.getStageFile(song.stage);
+			queueScriptsInFolder('scripts/');
+			queueLuaAndHScript('stages/${song.stage}');
+			queueScriptsInFolder('data/$folder/');
+			queueChartScriptHooks(song);
+
 			if (stageData != null)
 			{
-				var imgs:Array<String> = [];
-				var snds:Array<String> = [];
-				var mscs:Array<String> = [];
 				if(stageData.preload != null)
 				{
 					for (asset in Reflect.fields(stageData.preload))
@@ -531,11 +719,11 @@ class LoadingState extends MusicBeatState
 						if(filters < 0 || StageData.validateVisibility(filters))
 						{
 							if(asset.startsWith('images/'))
-								imgs.push(asset.substr('images/'.length));
+								queueImage(asset.substr('images/'.length));
 							else if(asset.startsWith('sounds/'))
-								snds.push(asset.substr('sounds/'.length));
+								queueSound(asset.substr('sounds/'.length));
 							else if(asset.startsWith('music/'))
-								mscs.push(asset.substr('music/'.length));
+								queueMusic(asset.substr('music/'.length));
 						}
 					}
 				}
@@ -545,14 +733,13 @@ class LoadingState extends MusicBeatState
 					for (sprite in stageData.objects)
 					{
 						if(sprite.type == 'sprite' || sprite.type == 'animatedSprite')
-							if((sprite.filters < 0 || StageData.validateVisibility(sprite.filters)) && !imgs.contains(sprite.image))
-								imgs.push(sprite.image);
+							if(sprite.image != null && (sprite.filters < 0 || StageData.validateVisibility(sprite.filters)))
+								queueImage(sprite.image);
 					}
 				}
-				prepare(imgs, snds, mscs);
 			}
 
-			songsToPrepare.push('$folder/Inst');
+			queueSong('$folder/Inst');
 
 			var player1:String = song.player1;
 			var player2:String = song.player2;
@@ -562,40 +749,40 @@ class LoadingState extends MusicBeatState
 
 			dontPreloadDefaultVoices = false;
 			preloadCharacter(player1, prefixVocals);
+			queueCharacterScripts(player1);
+			queueCharacterScripts(player2);
+			queueCharacterScripts(gfVersion);
 			if (!dontPreloadDefaultVoices && prefixVocals != null)
 			{
 				if(Paths.fileExists('$prefixVocals-Player.${Paths.SOUND_EXT}', SOUND, false, 'songs') && Paths.fileExists('$prefixVocals-Opponent.${Paths.SOUND_EXT}', SOUND, false, 'songs'))
 				{
-					songsToPrepare.push('$prefixVocals-Player');
-					songsToPrepare.push('$prefixVocals-Opponent');
+					queueSong('$prefixVocals-Player');
+					queueSong('$prefixVocals-Opponent');
 				}
 				else if(Paths.fileExists('$prefixVocals.${Paths.SOUND_EXT}', SOUND, false, 'songs'))
-					songsToPrepare.push(prefixVocals);
+					queueSong(prefixVocals);
 			}
 
-			if (player2 != player1)
+			var preloadPlayer2:Bool = player2 != player1;
+			var preloadGirlfriend:Bool = stageData != null && !stageData.hide_girlfriend && gfVersion != player2 && gfVersion != player1;
+			threadsMax = (preloadPlayer2 ? 1 : 0) + (preloadGirlfriend ? 1 : 0);
+
+			if (preloadPlayer2)
 			{
-				threadsMax++;
 				threadPool.run(() -> {
 					try { preloadCharacter(player2, prefixVocals); } catch (e:Dynamic) {}
 					completedThread();
 				});
 			}
-			if (!stageData.hide_girlfriend && gfVersion != player2 && gfVersion != player1)
+			if (preloadGirlfriend)
 			{
-				threadsMax++;
 				threadPool.run(() -> {
 					try { preloadCharacter(gfVersion); } catch (e:Dynamic) {}
 					completedThread();
 				});
 			}
 
-			if(threadsCompleted == threadsMax)
-			{
-				clearInvalids();
-				startThreads();
-				initialThreadCompleted = true;
-			}
+			finalizePrepareIfReady();
 			return true;
 		}, isIntrusive))
 		.onError((err:Dynamic) -> {
@@ -605,20 +792,26 @@ class LoadingState extends MusicBeatState
 
 	public static function clearInvalids()
 	{
-		clearInvalidFrom(imagesToPrepare, 'images', '.png', IMAGE);
-		clearInvalidFrom(soundsToPrepare, 'sounds', '.${Paths.SOUND_EXT}', SOUND);
-		clearInvalidFrom(musicToPrepare, 'music',' .${Paths.SOUND_EXT}', SOUND);
-		clearInvalidFrom(songsToPrepare, 'songs', '.${Paths.SOUND_EXT}', SOUND, 'songs');
+		clearInvalidFrom(imagesToPrepare, queuedImages, 'images', '.png', IMAGE);
+		clearInvalidFrom(soundsToPrepare, queuedSounds, 'sounds', '.${Paths.SOUND_EXT}', SOUND);
+		clearInvalidFrom(musicToPrepare, queuedMusic, 'music', '.${Paths.SOUND_EXT}', SOUND);
+		clearInvalidFrom(songsToPrepare, queuedSongs, 'songs', '.${Paths.SOUND_EXT}', SOUND, 'songs');
 
 		for (arr in [imagesToPrepare, soundsToPrepare, musicToPrepare, songsToPrepare])
 			while (arr.contains(null))
 				arr.remove(null);
 	}
 
-	static function clearInvalidFrom(arr:Array<String>, prefix:String, ext:String, type:AssetType, ?parentFolder:String = null)
+	static function clearInvalidFrom(arr:Array<String>, queued:Map<String, Bool>, prefix:String, ext:String, type:AssetType, ?parentFolder:String = null)
 	{
 		for (folder in arr.copy())
 		{
+			if (folder == null)
+			{
+				arr.remove(folder);
+				continue;
+			}
+
 			var nam:String = folder.trim();
 			if(nam.endsWith('/'))
 			{
@@ -629,7 +822,11 @@ class LoadingState extends MusicBeatState
 						if(file.endsWith(ext))
 						{
 							var toAdd:String = nam + haxe.io.Path.withoutExtension(file);
-							if(!arr.contains(toAdd)) arr.push(toAdd);
+							if(!queued.exists(toAdd))
+							{
+								queued.set(toAdd, true);
+								arr.push(toAdd);
+							}
 						}
 					}
 				}
@@ -651,6 +848,7 @@ class LoadingState extends MusicBeatState
 			if(member.endsWith('/') || (!Paths.fileExists(myKey, type, false, parentFolder) && (doTrace = true)))
 			{
 				arr.remove(member);
+				queued.remove(member);
 				if(doTrace) trace('Removed invalid $prefix: $member');
 			}
 			else i++;
@@ -660,7 +858,7 @@ class LoadingState extends MusicBeatState
 	public static function startThreads()
 	{
 		mutex = new Mutex();
-		loadMax = imagesToPrepare.length + soundsToPrepare.length + musicToPrepare.length + songsToPrepare.length;
+		loadMax = imagesToPrepare.length + soundsToPrepare.length + musicToPrepare.length + songsToPrepare.length + scriptsToPrepare.length;
 		loaded = 0;
 
 		//then start threads
@@ -673,6 +871,7 @@ class LoadingState extends MusicBeatState
 		for (sound in soundsToPrepare) initThread(() -> preloadSound('sounds/$sound'), 'sound $sound');
 		for (music in musicToPrepare) initThread(() -> preloadSound('music/$music'), 'music $music');
 		for (song in songsToPrepare) initThread(() -> preloadSound(song, 'songs', true, false), 'song $song');
+		for (script in scriptsToPrepare) initThread(() -> ScriptPreloadCache.preloadFile(script), 'script $script');
 
 		// for images, they get to have their own thread
 		for (image in imagesToPrepare) initThread(() -> preloadGraphic(image), 'image $image');
@@ -738,7 +937,7 @@ class LoadingState extends MusicBeatState
 				var split:Array<String> = img.split(',');
 				for (file in split)
 				{
-					imagesToPrepare.push(file.trim());
+					queueImage(file);
 				}
 			}
 			#if flxanimate
@@ -752,7 +951,7 @@ class LoadingState extends MusicBeatState
 					if(Paths.fileExists('images/$img/spritemap$st.png', IMAGE))
 					{
 						//trace('found Sprite PNG');
-						imagesToPrepare.push('$img/spritemap$st');
+						queueImage('$img/spritemap$st');
 						break;
 					}
 				}
@@ -761,7 +960,7 @@ class LoadingState extends MusicBeatState
 	
 			if (prefixVocals != null && character.vocals_file != null && character.vocals_file.length > 0)
 			{
-				songsToPrepare.push(prefixVocals + "-" + character.vocals_file);
+				queueSong(prefixVocals + "-" + character.vocals_file);
 				if(char == PlayState.SONG.player1) dontPreloadDefaultVoices = true;
 			}
 		}
@@ -777,6 +976,10 @@ class LoadingState extends MusicBeatState
 		var file:String = Paths.getPath(Language.getFileTranslation(key) + '.${Paths.SOUND_EXT}', SOUND, path, modsAllowed);
 
 		//trace('precaching sound: $file');
+		var cachedSound:Sound = Paths.getTrackedSound(file);
+		if(cachedSound != null)
+			return cachedSound;
+
 		if(!Paths.currentTrackedSounds.exists(file))
 		{
 			if (#if sys FileSystem.exists(file) || #end OpenFlAssets.exists(file, SOUND))
@@ -794,7 +997,7 @@ class LoadingState extends MusicBeatState
 			}
 		}
 		mutex.acquire();
-		Paths.localTrackedAssets.push(file);
+		Paths.markTrackedAsset(file);
 		mutex.release();
 
 		return Paths.currentTrackedSounds.get(file);
@@ -807,6 +1010,10 @@ class LoadingState extends MusicBeatState
 			var requestKey:String = 'images/$key';
 			#if TRANSLATIONS_ALLOWED requestKey = Language.getFileTranslation(requestKey); #end
 			if(requestKey.lastIndexOf('.') < 0) requestKey += '.png';
+
+			var cachedGraphic:FlxGraphic = Paths.getTrackedGraphic(requestKey);
+			if (cachedGraphic != null)
+				return cachedGraphic.bitmap;
 
 			if (!Paths.currentTrackedAssets.exists(requestKey))
 			{

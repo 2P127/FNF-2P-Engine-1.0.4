@@ -72,6 +72,7 @@ class Paths
 
 	public static function clearSecondLayerMemory(?runGC:Bool = true):Void
 	{
+		var clearedAny:Bool = false;
 		for (key in secondLayerTrackedAssets.keys())
 		{
 			if (currentTrackedAssets.exists(key)) continue;
@@ -83,6 +84,7 @@ class Paths
 				continue;
 			}
 			destroyGraphic(graphic);
+			clearedAny = true;
 		}
 
 		for (key => asset in secondLayerTrackedSounds)
@@ -95,6 +97,7 @@ class Paths
 				continue;
 			}
 			Assets.cache.clear(key);
+			clearedAny = true;
 		}
 
 		secondLayerTrackedAssets = new Map();
@@ -102,7 +105,7 @@ class Paths
 		secondLayerTrackedCharacterData = new Map();
 		secondLayerPendingAtlasText = new Map();
 
-		if (runGC)
+		if (runGC && clearedAny)
 		{
 			MemoryUtil.clearOpenFLUInt8Pools();
 			MemoryUtil.clearMajor();
@@ -113,6 +116,42 @@ class Paths
 	{
 		if (!localTrackedAssets.contains(key))
 			localTrackedAssets.push(key);
+	}
+
+	inline public static function markTrackedAsset(key:String):Void
+		trackLocalAsset(key);
+
+	public static function getTrackedGraphic(key:String):FlxGraphic
+	{
+		if (currentTrackedAssets.exists(key))
+		{
+			var graphic:FlxGraphic = currentTrackedAssets.get(key);
+			trackLocalAsset(key);
+			cacheGraphicOnState(graphic);
+			return graphic;
+		}
+
+		return restoreSecondLayerGraphic(key);
+	}
+
+	public static function getTrackedSound(file:String):Sound
+	{
+		if (currentTrackedSounds.exists(file))
+		{
+			trackLocalAsset(file);
+			return currentTrackedSounds.get(file);
+		}
+
+		if(secondLayerTrackedSounds.exists(file))
+		{
+			var sound:Sound = secondLayerTrackedSounds.get(file);
+			secondLayerTrackedSounds.remove(file);
+			currentTrackedSounds.set(file, sound);
+			trackLocalAsset(file);
+			return sound;
+		}
+
+		return null;
 	}
 
 	static function restoreSecondLayerGraphic(key:String):FlxGraphic
@@ -394,6 +433,15 @@ class Paths
 	public static var currentTrackedFrames:Map<String, FlxAtlasFrames> = new Map();
 	public static var currentTrackedCharacterData:Map<String, Dynamic> = new Map();
 	public static var pendingAtlasText:Map<String, String> = new Map();
+	static function disposeUnusedBitmap(bitmap:BitmapData, ?cached:FlxGraphic):Void
+	{
+		if (bitmap == null || (cached != null && cached.bitmap == bitmap)) return;
+
+		if (bitmap.__texture != null)
+			bitmap.__texture.dispose();
+		bitmap.dispose();
+	}
+
 	static public function image(key:String, ?parentFolderOrAllowGPU:Dynamic = null, ?allowGPU:Bool = true):FlxGraphic
 	{
 		var parentFolder:String = null;
@@ -404,34 +452,21 @@ class Paths
 
 		key = Language.getFileTranslation('images/$key') + '.png';
 		var bitmap:BitmapData = null;
-		if (currentTrackedAssets.exists(key))
-		{
-			var graph:FlxGraphic = currentTrackedAssets.get(key);
-			trackLocalAsset(key);
-			cacheGraphicOnState(graph);
-			return graph;
-		}
-
-		var secondLayerGraphic:FlxGraphic = restoreSecondLayerGraphic(key);
-		if (secondLayerGraphic != null)
-			return secondLayerGraphic;
+		var trackedGraphic:FlxGraphic = getTrackedGraphic(key);
+		if (trackedGraphic != null)
+			return trackedGraphic;
 
 		return cacheBitmap(key, bitmap, parentFolder, allowGPU);
 	}
 
 	public static function cacheBitmap(key:String, ?bitmap:BitmapData, ?parentFolder:String = null, ?allowGPU:Bool = true):FlxGraphic
 	{
-		if (currentTrackedAssets.exists(key))
+		var trackedGraphic:FlxGraphic = getTrackedGraphic(key);
+		if (trackedGraphic != null)
 		{
-			var cached:FlxGraphic = currentTrackedAssets.get(key);
-			trackLocalAsset(key);
-			cacheGraphicOnState(cached);
-			return cached;
+			disposeUnusedBitmap(bitmap, trackedGraphic);
+			return trackedGraphic;
 		}
-
-		var secondLayerGraphic:FlxGraphic = restoreSecondLayerGraphic(key);
-		if (secondLayerGraphic != null)
-			return secondLayerGraphic;
 
 		if (bitmap == null)
 		{
@@ -676,20 +711,9 @@ class Paths
 		var file:String = getPath(Language.getFileTranslation(key) + '.$SOUND_EXT', SOUND, path, modsAllowed);
 
 		//trace('precaching sound: $file');
-		if(currentTrackedSounds.exists(file))
-		{
-			trackLocalAsset(file);
-			return currentTrackedSounds.get(file);
-		}
-
-		if(secondLayerTrackedSounds.exists(file))
-		{
-			var sound:Sound = secondLayerTrackedSounds.get(file);
-			secondLayerTrackedSounds.remove(file);
-			currentTrackedSounds.set(file, sound);
-			trackLocalAsset(file);
-			return sound;
-		}
+		var trackedSound:Sound = getTrackedSound(file);
+		if(trackedSound != null)
+			return trackedSound;
 
 		if(!currentTrackedSounds.exists(file))
 		{

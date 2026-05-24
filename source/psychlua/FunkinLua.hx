@@ -4,6 +4,7 @@ package psychlua;
 import backend.WeekData;
 import backend.Highscore;
 import backend.Song;
+import backend.ScriptPreloadCache;
 
 import openfl.Lib;
 import openfl.utils.Assets;
@@ -1677,9 +1678,16 @@ class FunkinLua {
 		}
 
 		try{
-			var isString:Bool = !FileSystem.exists(scriptName);
+			var cachedSource:String = ScriptPreloadCache.consumeText(scriptName);
+			var isString:Bool = cachedSource == null && !FileSystem.exists(scriptName);
 			var result:Dynamic = null;
-			if(!isString)
+			if(cachedSource != null)
+			{
+				result = LuaL.loadbuffer(lua, cachedSource, cachedSource.length, scriptName);
+				if(result == Lua.LUA_OK)
+					result = Lua.pcall(lua, 0, Lua.LUA_MULTRET, 0);
+			}
+			else if(!isString)
 				result = LuaL.dofile(lua, scriptName);
 			else
 				result = LuaL.dostring(lua, scriptName);

@@ -1,5 +1,6 @@
 package psychlua;
 
+import backend.ScriptPreloadCache;
 import flixel.FlxBasic;
 import objects.Character;
 import psychlua.LuaUtils;
@@ -103,7 +104,8 @@ class HScript extends Iris
 		{
 			var f:String = file.replace('\\', '/');
 			if(f.contains('/') && !f.contains('\n')) {
-				scriptThing = File.getContent(f);
+				var cachedSource:String = ScriptPreloadCache.consumeText(f);
+				scriptThing = cachedSource != null ? cachedSource : File.getContent(f);
 				scriptName = f;
 			}
 		}

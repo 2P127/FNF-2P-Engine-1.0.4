@@ -1104,6 +1104,7 @@ class StageEditorState extends MusicBeatState implements PsychUIEventHandler.Psy
 			DiscordClient.changePresence('Stage Editor', 'Stage: ' + lastLoadedStage);
 			#end
 
+			StageData.clearStageFileCache();
 			stageJson = StageData.getStageFile(lastLoadedStage);
 			updateSpriteList();
 			updateStageDataUI();
@@ -1135,6 +1136,7 @@ class StageEditorState extends MusicBeatState implements PsychUIEventHandler.Psy
 			if (Assets.exists(path))
 			#end
 			{
+				StageData.clearStageFileCache();
 				stageJson = StageData.getStageFile(selected);
 				lastLoadedStage = selected;
 				#if DISCORD_ALLOWED
@@ -1623,6 +1625,7 @@ class StageEditorState extends MusicBeatState implements PsychUIEventHandler.Psy
 		_file.removeEventListener(Event.CANCEL, onSaveCancel);
 		_file.removeEventListener(IOErrorEvent.IO_ERROR, onSaveError);
 		_file = null;
+		StageData.clearStageFileCache();
 		FlxG.log.notice('Successfully saved file.');
 	}
 

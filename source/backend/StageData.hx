@@ -26,6 +26,11 @@ typedef StageFile = {
 	@:optional var _editorMeta:Dynamic;
 }
 
+typedef CachedStageFile = {
+	var modified:Float;
+	var data:StageFile;
+}
+
 enum abstract LoadFilters(Int) from Int from UInt to Int to UInt
 {
 	var LOW_QUALITY:Int = (1 << 0);
@@ -36,6 +41,11 @@ enum abstract LoadFilters(Int) from Int from UInt to Int to UInt
 }
 
 class StageData {
+	static var stageFileCache:Map<String, CachedStageFile> = new Map();
+
+	public static function clearStageFileCache():Void
+		stageFileCache = new Map();
+
 	public static function dummy():StageFile
 	{
 		return {
@@ -81,10 +91,27 @@ class StageData {
 			var path:String = Paths.getPath('stages/' + stage + '.json', TEXT, null, true);
 			#if MODS_ALLOWED
 			if(FileSystem.exists(path))
-				return cast tjson.TJSON.parse(File.getContent(path));
+			{
+				var modified:Float = FileSystem.stat(path).mtime.getTime();
+				var cached:CachedStageFile = stageFileCache.get(path);
+				if(cached != null && cached.modified == modified)
+					return cached.data;
+
+				var parsed:StageFile = cast tjson.TJSON.parse(File.getContent(path));
+				stageFileCache.set(path, {modified: modified, data: parsed});
+				return parsed;
+			}
 			#else
 			if(Assets.exists(path))
-				return cast tjson.TJSON.parse(Assets.getText(path));
+			{
+				var cached:CachedStageFile = stageFileCache.get(path);
+				if(cached != null)
+					return cached.data;
+
+				var parsed:StageFile = cast tjson.TJSON.parse(Assets.getText(path));
+				stageFileCache.set(path, {modified: 0, data: parsed});
+				return parsed;
+			}
 			#end
 		}
 		return dummy();

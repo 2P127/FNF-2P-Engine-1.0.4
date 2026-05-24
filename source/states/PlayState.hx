@@ -5,6 +5,7 @@ import backend.StageData;
 import backend.WeekData;
 import backend.Song;
 import backend.Rating;
+import backend.ScriptPreloadCache;
 
 import flixel.FlxBasic;
 import flixel.FlxObject;
@@ -285,7 +286,10 @@ class PlayState extends MusicBeatState
 	{
 		if (_scriptDirCache == null) _scriptDirCache = new Map();
 		if (!_scriptDirCache.exists(folder))
-			_scriptDirCache.set(folder, sys.FileSystem.readDirectory(folder));
+		{
+			var preloaded:Array<String> = ScriptPreloadCache.getDirectoryFiles(folder);
+			_scriptDirCache.set(folder, preloaded != null ? preloaded : sys.FileSystem.readDirectory(folder));
+		}
 		return _scriptDirCache.get(folder);
 	}
 
