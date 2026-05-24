@@ -1183,7 +1183,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 					softReloadNotes(true);
 				}
-				else if(FlxG.keys.justPressed.A != FlxG.keys.justPressed.D && !holdingAlt)
+				else if(FlxG.keys.justPressed.A != FlxG.keys.justPressed.D && !holdingAlt && !FlxG.keys.pressed.CONTROL)
 				{
 					if(FlxG.sound.music.playing)
 						setSongPlaying(false);

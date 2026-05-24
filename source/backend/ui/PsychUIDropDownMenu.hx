@@ -10,15 +10,19 @@ class PsychUIDropDownMenu extends PsychUIInputText
 	public var button:FlxSprite;
 	public var onSelect:Int->String->Void;
 
+	public var maxVisibleItems:Int = 12;
+
 	public var selectedIndex(default, set):Int = -1;
 	public var selectedLabel(default, set):String = null;
 
-	var _curFilter:Array<String>;
+	var _curFilterIndices:Array<Int>;
+	var _allIndices:Array<Int> = [];
+	var _itemPool:Array<PsychUIDropDownItem> = [];
 	var _itemWidth:Float = 0;
-	public function new(x:Float, y:Float, list:Array<String>, callback:Int->String->Void, ?width:Float = 100)
+	public function new(x:Float, y:Float, initialList:Array<String>, callback:Int->String->Void, ?width:Float = 100)
 	{
 		super(x, y);
-		if(list == null) list = [];
+		if(initialList == null) initialList = [];
 
 		_itemWidth = width - 2;
 		setGraphicSize(width, 20);
@@ -31,14 +35,20 @@ class PsychUIDropDownMenu extends PsychUIInputText
 		button.animation.play('normal', true);
 		add(button);
 
+		initItemPool();
+
 		onSelect = callback;
 
 		onChange = function(old:String, cur:String)
 		{
 			if(old != cur)
 			{
-				_curFilter = this.list.filter(function(str:String) return str.startsWith(cur));
-				showDropDown(true, 0, _curFilter);
+				var lowered = cur.toLowerCase();
+				_curFilterIndices = [];
+				for (i in 0...list.length)
+					if(list[i].toLowerCase().indexOf(lowered) != -1)
+						_curFilterIndices.push(i);
+				showDropDown(true, 0, _curFilterIndices);
 			}
 		}
 		unfocus = function()
@@ -47,10 +57,8 @@ class PsychUIDropDownMenu extends PsychUIInputText
 			showDropDown(false);
 		}
 
-		for (option in list)
-			addOption(option);
-
-		selectedIndex = 0;
+		this.list = initialList;
+		selectedIndex = (list.length > 0) ? 0 : -1;
 		showDropDown(false);
 	}
 
@@ -59,8 +67,16 @@ class PsychUIDropDownMenu extends PsychUIInputText
 		selectedIndex = v;
 		if(selectedIndex < 0 || selectedIndex >= list.length) selectedIndex = -1;
 
-		@:bypassAccessor selectedLabel = list[selectedIndex];
-		text = (selectedLabel != null) ? selectedLabel : '';
+		if(selectedIndex >= 0)
+		{
+			@:bypassAccessor selectedLabel = list[selectedIndex];
+			text = selectedLabel;
+		}
+		else
+		{
+			@:bypassAccessor selectedLabel = null;
+			text = '';
+		}
 		return selectedIndex;
 	}
 
@@ -82,7 +98,6 @@ class PsychUIDropDownMenu extends PsychUIInputText
 		return selectedLabel;
 	}
 
-	var _items:Array<PsychUIDropDownItem> = [];
 	public var curScroll:Int = 0;
 	override function update(elapsed:Float)
 	{
@@ -103,14 +118,14 @@ class PsychUIDropDownMenu extends PsychUIInputText
 
 		if(lastFocus != PsychUIInputText.focusOn)
 		{
-			showDropDown(PsychUIInputText.focusOn == this);
+			showDropDown(PsychUIInputText.focusOn == this, curScroll, _curFilterIndices);
 		}
 		else if(PsychUIInputText.focusOn == this)
 		{
 			var wheel:Int = FlxG.mouse.wheel;
-			if(FlxG.keys.justPressed.UP) wheel++;
-			if(FlxG.keys.justPressed.DOWN) wheel--;
-			if(wheel != 0) showDropDown(true, curScroll - wheel, _curFilter);
+			if(FlxG.keys.pressed.UP) wheel++;
+			if(FlxG.keys.pressed.DOWN) wheel--;
+			if(wheel != 0) showDropDown(true, curScroll - wheel, _curFilterIndices);
 		}
 	}
 
@@ -118,62 +133,58 @@ class PsychUIDropDownMenu extends PsychUIInputText
 	{
 		if(FlxG.mouse.justPressed)
 		{
-			for (item in _items) //extra update to fix a little bug where it wouldnt click on any option if another input text was behind the drop down
+			for (item in _itemPool) //extra update to fix a little bug where it wouldnt click on any option if another input text was behind the drop down
 				if(item != null && item.active && item.visible)
 					item.update(0);
 		}
 	}
 
-	public function showDropDown(vis:Bool = true, scroll:Int = 0, onlyAllowed:Array<String> = null)
+	public function showDropDown(vis:Bool = true, scroll:Int = 0, onlyAllowed:Array<Int> = null)
 	{
 		if(!vis)
 		{
 			text = selectedLabel;
-			_curFilter = null;
+			_curFilterIndices = null;
+			hideAllItems();
+			return;
 		}
 
-		curScroll = Std.int(Math.max(0, Math.min(onlyAllowed != null ? (onlyAllowed.length - 1) : (list.length - 1), scroll)));
-		if(vis)
-		{
-			var n:Int = 0;
-			for (item in _items)
-			{
-				if(onlyAllowed != null)
-				{
-					if(onlyAllowed.contains(item.label))
-					{
-						item.active = item.visible = (n >= curScroll);
-						n++;
-					}
-					else item.active = item.visible = false;
-				}
-				else
-				{
-					item.active = item.visible = (n >= curScroll);
-					n++;
-				}
-			}
+		var source:Array<Int> = (onlyAllowed != null) ? onlyAllowed : (_curFilterIndices != null ? _curFilterIndices : _allIndices);
+		if(source == null) source = [];
 
-			var txtY:Float = behindText.y + behindText.height + 1;
-			for (num => item in _items)
+		var maxVisible:Int = Std.int(Math.max(1, maxVisibleItems));
+		var total:Int = source.length;
+		var poolCount:Int = _itemPool.length;
+		var visibleCount:Int = Std.int(Math.min(poolCount, Math.min(maxVisible, total)));
+		if(visibleCount <= 0)
+		{
+			hideAllItems();
+			return;
+		}
+
+		curScroll = clampScroll(scroll, total, visibleCount);
+
+		var txtY:Float = behindText.y + behindText.height + 1;
+		for (i in 0...poolCount)
+		{
+			var item = _itemPool[i];
+			if(i < visibleCount)
 			{
-				if(!item.visible) continue;
+				var actualIndex:Int = source[curScroll + i];
+				var label:String = list[actualIndex];
+				item.label = label;
+				item.onClick = makeOnClick(actualIndex, label);
+				item.visible = item.active = true;
+				item.forceNextUpdate = true;
 				item.x = behindText.x;
 				item.y = txtY;
 				txtY += item.height;
-				item.forceNextUpdate = true;
 			}
-			bg.scale.y = txtY - behindText.y + 2;
-			bg.updateHitbox();
+			else item.active = item.visible = false;
 		}
-		else
-		{
-			for (item in _items)
-				item.active = item.visible = false;
 
-			bg.scale.y = 20;
-			bg.updateHitbox();
-		}
+		bg.scale.y = txtY - behindText.y + 2;
+		bg.updateHitbox();
 	}
 
 	public var broadcastDropDownEvent:Bool = true;
@@ -188,15 +199,9 @@ class PsychUIDropDownMenu extends PsychUIInputText
 	function addOption(option:String)
 	{
 		@:bypassAccessor list.push(option);
-		var curID:Int = list.length - 1;
-		var item:PsychUIDropDownItem = cast recycle(PsychUIDropDownItem, () -> new PsychUIDropDownItem(1, 1, this._itemWidth), true);
-		item.cameras = cameras;
-		item.label = option;
-		item.visible = item.active = false;
-		item.onClick = function() clickedOn(curID, option);
-		item.forceNextUpdate = true;
-		_items.push(item);
-		insert(1, item);
+		_allIndices.push(list.length - 1);
+		if(PsychUIInputText.focusOn == this)
+			showDropDown(true, curScroll, _curFilterIndices);
 	}
 
 	function set_list(v:Array<String>)
@@ -204,16 +209,55 @@ class PsychUIDropDownMenu extends PsychUIInputText
 		var selected:String = selectedLabel;
 		showDropDown(false);
 
-		for (item in _items)
-			item.kill();
-
-		_items = [];
-		list = [];
-		for (option in v)
-			addOption(option);
+		@:bypassAccessor list = (v == null) ? [] : v;
+		rebuildIndices();
 
 		if(selectedLabel != null) selectedLabel = selected;
-		return v;
+		else if(list.length > 0) selectedIndex = 0;
+		else selectedIndex = -1;
+		return list;
+	}
+
+	inline function clampScroll(scroll:Int, total:Int, visibleCount:Int):Int
+	{
+		var maxScroll = Math.max(0, total - visibleCount);
+		return Std.int(Math.max(0, Math.min(maxScroll, scroll)));
+	}
+
+	inline function makeOnClick(idx:Int, label:String):Void->Void
+	{
+		return function() clickedOn(idx, label);
+	}
+
+	function hideAllItems():Void
+	{
+		for (item in _itemPool)
+			item.active = item.visible = false;
+
+		bg.scale.y = 20;
+		bg.updateHitbox();
+	}
+
+	function initItemPool():Void
+	{
+		if(maxVisibleItems < 1) maxVisibleItems = 1;
+		for (i in 0...maxVisibleItems)
+		{
+			var item = new PsychUIDropDownItem(1, 1, this._itemWidth);
+			item.cameras = cameras;
+			item.visible = item.active = false;
+			item.forceNextUpdate = true;
+			_itemPool.push(item);
+			insert(1, item);
+		}
+	}
+
+	function rebuildIndices():Void
+	{
+		_allIndices.resize(0);
+		if(list != null)
+			for (i in 0...list.length)
+				_allIndices.push(i);
 	}
 }
 

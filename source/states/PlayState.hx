@@ -596,9 +596,7 @@ class PlayState extends MusicBeatState
 		if(ClientPrefs.data.downScroll)
 			botplayTxt.y = healthBar.y + 70;
 
-		uiGroup.cameras = [camHUD];
-		noteGroup.cameras = [camHUD];
-		comboGroup.cameras = [camHUD];
+		uiGroup.cameras = noteGroup.cameras = comboGroup.cameras = [camHUD];
 
 		startingSong = true;
 
@@ -1046,7 +1044,11 @@ class PlayState extends MusicBeatState
 		if (videoDesiredVolume.exists(tag)) {
 			var v = videoDesiredVolume.get(tag);
 			if (v < 0) v = 0; else if (v > 1) v = 1;
-			videoSprite.volumeAdjust = v;
+			#if (hxvlc < "2.2.6")
+                videoSprite.volumeAdjust = v;
+            #else
+                videoSprite.bitmap.volume = Std.int(v * 100);
+            #end
 		}
 
 		// Insert behind notes/strums
@@ -1211,7 +1213,11 @@ class PlayState extends MusicBeatState
 		videoDesiredVolume.set(tag, vol);
 		var spr = videoSprites.get(tag);
 		if (spr != null)
-			spr.volumeAdjust = vol; // hxvlc: volumeAdjust is 0.0-1.0 float multiplier
+			#if (hxvlc < "2.2.6")
+                spr.volumeAdjust = vol; // hxvlc: volumeAdjust is 0.0-1.0 float multiplier
+            #else
+                spr.bitmap.volume = Std.int(vol * 100);
+            #end
 	}
 
 	public function setAlphaVideo(tag:String, alphaSet:Float):Void
