@@ -612,6 +612,50 @@ class CharacterEditorState extends MusicBeatState implements PsychUIEventHandler
 	var healthColorStepperR:PsychUINumericStepper;
 	var healthColorStepperG:PsychUINumericStepper;
 	var healthColorStepperB:PsychUINumericStepper;
+
+	function getHealthIconDominantColor(icon:String):Null<Int>
+	{
+		var iconName:String = icon == null || icon.trim().length < 1 ? 'face' : icon.trim();
+		var path:String = 'icons/' + iconName;
+		if(!Paths.fileExists('images/' + path + '.png', IMAGE)) path = 'icons/icon-' + iconName;
+		if(!Paths.fileExists('images/' + path + '.png', IMAGE)) path = 'icons/icon-face';
+
+		var bitmap:openfl.display.BitmapData = null;
+		var disposeBitmap:Bool = false;
+		var file:String = Paths.getPath('images/' + path + '.png', IMAGE, null, true);
+
+		#if sys
+		if(FileSystem.exists(file))
+		{
+			try
+			{
+				bitmap = openfl.display.BitmapData.fromFile(file);
+				disposeBitmap = true;
+			}
+			catch(e:Dynamic) {}
+		}
+		else
+		#end
+		if(Assets.exists(file, IMAGE))
+		{
+			try
+			{
+				bitmap = Assets.getBitmapData(file, false);
+			}
+			catch(e:Dynamic) {}
+		}
+
+		var color:Null<Int> = null;
+		if(bitmap != null)
+		{
+			var framesWide:Int = bitmap.height > 0 ? Std.int(Math.max(1, Math.round(bitmap.width / bitmap.height))) : 1;
+			var frameWidth:Int = Std.int(Math.max(1, Math.floor(bitmap.width / framesWide)));
+			color = CoolUtil.dominantColorFromBitmap(bitmap, frameWidth, bitmap.height);
+		}
+		if(disposeBitmap && bitmap != null) bitmap.dispose();
+		return color;
+	}
+
 	function addCharacterUI()
 	{
 		var tab_group = UI_characterbox.getTab('Character').menu;
@@ -629,7 +673,11 @@ class CharacterEditorState extends MusicBeatState implements PsychUIEventHandler
 
 		var decideIconColor:PsychUIButton = new PsychUIButton(reloadImage.x, reloadImage.y + 30, "Get Icon Color", function()
 			{
-				var coolColor:FlxColor = FlxColor.fromInt(CoolUtil.dominantColor(healthIcon));
+				var dominantColor:Null<Int> = CoolUtil.dominantColor(healthIcon);
+				if(dominantColor == null) dominantColor = getHealthIconDominantColor(healthIconInputText.text);
+				if(dominantColor == null) return;
+
+				var coolColor:FlxColor = FlxColor.fromInt(dominantColor);
 				character.healthColorArray[0] = coolColor.red;
 				character.healthColorArray[1] = coolColor.green;
 				character.healthColorArray[2] = coolColor.blue;

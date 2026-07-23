@@ -75,6 +75,8 @@ class TitleState extends MusicBeatState
 			ClientPrefs.loadPrefs();
 			Language.reloadPhrases();
 		}
+		Main.reachedTitleState = true;
+		Main.refreshFPSCounterVisibility();
 
 		curWacky = FlxG.random.getObject(getIntroTextShit());
 

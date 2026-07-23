@@ -343,7 +343,7 @@ class VisualsSettingsSubState extends BaseOptionsMenu
 	function onChangeFPSCounter()
 	{
 		if(Main.fpsVar != null)
-			Main.fpsVar.visible = ClientPrefs.data.showFPS;
+			Main.refreshFPSCounterVisibility();
 	}
 
 	function onChangeFPSAppearance()

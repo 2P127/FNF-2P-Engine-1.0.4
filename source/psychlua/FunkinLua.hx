@@ -141,6 +141,8 @@ class FunkinLua {
 			set('ratingFC', game.ratingFC);
 			set('totalPlayed', game.totalPlayed);
 			set('totalNotesHit', game.totalNotesHit);
+			set('comboX', game.comboX);
+			set('comboY', game.comboY);
 
 			set('inGameOver', GameOverSubstate.instance != null);
 			set('mustHitSection', curSection != null ? (curSection.mustHitSection == true) : false);

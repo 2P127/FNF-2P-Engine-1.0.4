@@ -31,14 +31,17 @@ class NoteOffsetState extends MusicBeatState
 	var beatTween:FlxTween;
 
 	var changeModeText:FlxText;
+	var allowComboOffset:Bool = true;
 
 	var controllerPointer:FlxSprite;
 	var _lastControllerMode:Bool = false;
 
 	override public function create()
 	{
+		allowComboOffset = ClientPrefs.data.comboDisplayMode != 'camHUD';
+
 		#if DISCORD_ALLOWED
-		DiscordClient.changePresence("Delay/Combo Offset Menu", null);
+		DiscordClient.changePresence(allowComboOffset ? "Delay/Combo Offset Menu" : "Delay Offset Menu", null);
 		#end
 
 		// Cameras
@@ -185,7 +188,7 @@ class NoteOffsetState extends MusicBeatState
 		var addNum:Int = 1;
 		if(FlxG.keys.pressed.SHIFT || FlxG.gamepads.anyPressed(LEFT_SHOULDER))
 		{
-			if(onComboMenu)
+			if(allowComboOffset && onComboMenu)
 				addNum = 10;
 			else
 				addNum = 3;
@@ -211,7 +214,7 @@ class NoteOffsetState extends MusicBeatState
 			_lastControllerMode = controls.controllerMode;
 		}
 
-		if(onComboMenu)
+		if(allowComboOffset && onComboMenu)
 		{
 			if(FlxG.keys.justPressed.ANY || FlxG.gamepads.anyJustPressed(ANY))
 			{
@@ -392,8 +395,8 @@ class NoteOffsetState extends MusicBeatState
 			}
 		}
 
-		if((!controls.controllerMode && controls.ACCEPT) ||
-		(controls.controllerMode && FlxG.gamepads.anyJustPressed(START)))
+		if(allowComboOffset && ((!controls.controllerMode && controls.ACCEPT) ||
+		(controls.controllerMode && FlxG.gamepads.anyJustPressed(START))))
 		{
 			onComboMenu = !onComboMenu;
 			updateMode();
@@ -515,6 +518,8 @@ class NoteOffsetState extends MusicBeatState
 
 	function updateMode()
 	{
+		if(!allowComboOffset) onComboMenu = false;
+
 		rating.visible = onComboMenu;
 		comboNums.visible = onComboMenu;
 		dumbTexts.visible = onComboMenu;
@@ -538,11 +543,14 @@ class NoteOffsetState extends MusicBeatState
 		else
 			str = Language.getPhrase('note_delay', 'Note/Beat Delay');
 
-		if(!controls.controllerMode)
+		if(!allowComboOffset)
+			str2 = '';
+		else if(!controls.controllerMode)
 			str2 = Language.getPhrase('switch_on_accept', '(Press Accept to Switch)');
 		else
 			str2 = Language.getPhrase('switch_on_start', '(Press Start to Switch)');
 
-		changeModeText.text = '< ${str.toUpperCase()} ${str2.toUpperCase()} >';
+		var suffix:String = str2.length > 0 ? ' ' + str2.toUpperCase() : '';
+		changeModeText.text = '< ${str.toUpperCase()}$suffix >';
 	}
 }

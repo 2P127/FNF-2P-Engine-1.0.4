@@ -19,6 +19,15 @@ class OptionsState extends MusicBeatState
 	public static var menuBG:FlxSprite;
 	public static var onPlayState:Bool = false;
 
+	static inline var DELAY_AND_COMBO_OPTION:String = 'Adjust Delay and Combo';
+	static inline var DELAY_ONLY_OPTION:String = 'Adjust Delay';
+
+	static function delayOptionLabel():String
+		return ClientPrefs.data.comboDisplayMode == 'camHUD' ? DELAY_ONLY_OPTION : DELAY_AND_COMBO_OPTION;
+
+	function displayLabel(option:String):String
+		return option == DELAY_AND_COMBO_OPTION ? delayOptionLabel() : option;
+
 	function openSelectedSubstate(label:String) {
 		switch(label)
 		{
@@ -32,7 +41,7 @@ class OptionsState extends MusicBeatState
 				openSubState(new options.VisualsSettingsSubState());
 			case 'Gameplay':
 				openSubState(new options.GameplaySettingsSubState());
-			case 'Adjust Delay and Combo':
+			case 'Adjust Delay and Combo' | 'Adjust Delay':
 				MusicBeatState.switchState(new options.NoteOffsetState());
 			case 'Language':
 				openSubState(new options.LanguageSubState());
@@ -61,7 +70,8 @@ class OptionsState extends MusicBeatState
 
 		for (num => option in options)
 		{
-			var optionText:Alphabet = new Alphabet(0, 0, Language.getPhrase('options_$option', option), true);
+			var label:String = displayLabel(option);
+			var optionText:Alphabet = new Alphabet(0, 0, Language.getPhrase('options_$label', label), true);
 			optionText.screenCenter();
 			optionText.y += (92 * (num - (options.length / 2))) + 45;
 			grpOptions.add(optionText);
@@ -82,6 +92,7 @@ class OptionsState extends MusicBeatState
 	{
 		super.closeSubState();
 		ClientPrefs.saveSettings();
+		reloadOptionLabels();
 		#if DISCORD_ALLOWED
 		DiscordClient.changePresence("Options Menu", null);
 		#end
@@ -109,7 +120,7 @@ class OptionsState extends MusicBeatState
 		else if (controls.ACCEPT) openSelectedSubstate(options[curSelected]);
 	}
 	
-	function changeSelection(change:Int = 0)
+	function changeSelection(change:Int = 0, playSound:Bool = true)
 	{
 		curSelected = FlxMath.wrap(curSelected + change, 0, options.length - 1);
 
@@ -126,7 +137,19 @@ class OptionsState extends MusicBeatState
 				selectorRight.y = item.y;
 			}
 		}
-		FlxG.sound.play(Paths.sound('scrollMenu'));
+		if(playSound) FlxG.sound.play(Paths.sound('scrollMenu'));
+	}
+
+	function reloadOptionLabels()
+	{
+		for (num => item in grpOptions.members)
+		{
+			var label:String = displayLabel(options[num]);
+			item.text = Language.getPhrase('options_$label', label);
+			item.screenCenter();
+			item.y += (92 * (num - (options.length / 2))) + 45;
+		}
+		changeSelection(0, false);
 	}
 
 	override function destroy()

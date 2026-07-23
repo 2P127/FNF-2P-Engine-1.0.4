@@ -60,7 +60,16 @@ class Main extends Sprite
 	};
 
 	public static var fpsVar:FPSCounter;
+	public static var reachedTitleState:Bool = false;
 	// public static var buildWatermark:BuildWatermark;
+
+	public static function refreshFPSCounterVisibility():Void
+	{
+		#if !mobile
+		if(fpsVar != null)
+			fpsVar.visible = reachedTitleState && ClientPrefs.data.showFPS;
+		#end
+	}
 
 	// You can pretty much ignore everything from here on - your code should go in your states.
 
@@ -167,9 +176,7 @@ class Main extends Sprite
 		addChild(fpsVar);
 		Lib.current.stage.align = "tl";
 		Lib.current.stage.scaleMode = StageScaleMode.NO_SCALE;
-		if(fpsVar != null) {
-			fpsVar.visible = ClientPrefs.data.showFPS;
-		}
+		refreshFPSCounterVisibility();
 
 		// buildWatermark = new BuildWatermark();
 		// addChild(buildWatermark);

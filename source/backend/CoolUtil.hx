@@ -82,21 +82,51 @@ class CoolUtil
 		return Math.floor(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
 	}
 
-	inline public static function dominantColor(sprite:flixel.FlxSprite):Int
+	public static function dominantColor(sprite:flixel.FlxSprite):Null<Int>
 	{
+		if(sprite == null) return null;
+		return dominantColorFromBitmap(sprite.pixels, sprite.frameWidth, sprite.frameHeight);
+	}
+
+	public static function dominantColorFromBitmap(bitmap:openfl.display.BitmapData, ?width:Int = 0, ?height:Int = 0):Null<Int>
+	{
+		if(bitmap == null) return null;
+
 		var countByColor:Map<Int, Int> = [];
-		for(col in 0...sprite.frameWidth)
+		var sampleWidth:Int = 0;
+		var sampleHeight:Int = 0;
+
+		try
 		{
-			for(row in 0...sprite.frameHeight)
+			sampleWidth = width > 0 ? Std.int(Math.min(width, bitmap.width)) : bitmap.width;
+			sampleHeight = height > 0 ? Std.int(Math.min(height, bitmap.height)) : bitmap.height;
+		}
+		catch(e:Dynamic)
+		{
+			return null;
+		}
+
+		if(sampleWidth <= 0 || sampleHeight <= 0) return null;
+
+		try
+		{
+			for(col in 0...sampleWidth)
 			{
-				var colorOfThisPixel:FlxColor = sprite.pixels.getPixel32(col, row);
-				if(colorOfThisPixel.alphaFloat > 0.05)
+				for(row in 0...sampleHeight)
 				{
-					colorOfThisPixel = FlxColor.fromRGB(colorOfThisPixel.red, colorOfThisPixel.green, colorOfThisPixel.blue, 255);
-					var count:Int = countByColor.exists(colorOfThisPixel) ? countByColor[colorOfThisPixel] : 0;
-					countByColor[colorOfThisPixel] = count + 1;
+					var colorOfThisPixel:FlxColor = bitmap.getPixel32(col, row);
+					if(colorOfThisPixel.alphaFloat > 0.05)
+					{
+						colorOfThisPixel = FlxColor.fromRGB(colorOfThisPixel.red, colorOfThisPixel.green, colorOfThisPixel.blue, 255);
+						var count:Int = countByColor.exists(colorOfThisPixel) ? countByColor[colorOfThisPixel] : 0;
+						countByColor[colorOfThisPixel] = count + 1;
+					}
 				}
 			}
+		}
+		catch(e:Dynamic)
+		{
+			return null;
 		}
 
 		var maxCount = 0;
@@ -111,7 +141,7 @@ class CoolUtil
 			}
 		}
 		countByColor = [];
-		return maxKey;
+		return maxCount > 0 ? maxKey : null;
 	}
 
 	inline public static function numberArray(max:Int, ?min = 0):Array<Int>

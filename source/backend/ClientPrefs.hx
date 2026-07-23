@@ -68,6 +68,7 @@ import states.TitleState;
 	];
 
 	public var comboOffset:Array<Int> = [0, 0, 0, 0];
+	public var comboDisplayMode:String = 'camGame';
 	public var ratingOffset:Int = 0;
 	public var sickWindow:Float = 45.0;
 	public var goodWindow:Float = 90.0;
@@ -204,7 +205,7 @@ class ClientPrefs {
 				Reflect.setField(data, key, Reflect.field(FlxG.save.data, key));
 		
 		if(Main.fpsVar != null) {
-			Main.fpsVar.visible = data.showFPS;
+			Main.refreshFPSCounterVisibility();
 			Main.fpsVar.applySettings();
 		}
 
