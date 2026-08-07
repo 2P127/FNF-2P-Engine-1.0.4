@@ -10,6 +10,7 @@ import debug.BuildWatermark;
 import flixel.graphics.FlxGraphic;
 import flixel.FlxGame;
 import flixel.FlxState;
+import flixel.system.frontEnds.FunkinSoundFrontEnd;
 import haxe.io.Path;
 import openfl.Assets;
 import openfl.Lib;
@@ -166,6 +167,7 @@ class Main extends Sprite
 		ClientPrefs.loadDefaultKeys();
 		#if ACHIEVEMENTS_ALLOWED Achievements.load(); #end
 		var flxGame = new FlxGame(game.width, game.height, game.initialState, game.framerate, game.framerate, game.skipSplash, game.startFullscreen);
+		@:privateAccess FlxG.sound = new FunkinSoundFrontEnd();
 		@:privateAccess flxGame._customSoundTray = FunkinSoundTray;
 		addChild(flxGame);
 		backend.FunkinCache.init();
