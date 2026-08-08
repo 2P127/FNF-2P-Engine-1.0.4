@@ -566,6 +566,10 @@ class Paths
 		{
 			var text:String = pendingAtlasText.get(framesKey);
 			pendingAtlasText.remove(framesKey);
+			// UTF-8 BOM is not considered whitespace by StringTools.ltrim().
+			// Strip it so preloaded Sparrow XML is not mistaken for TexturePacker JSON.
+			if (text.length > 0 && text.charCodeAt(0) == 0xFEFF)
+				text = text.substr(1);
 			var result:FlxAtlasFrames = StringTools.ltrim(text).startsWith('<')
 				? FlxAtlasFrames.fromSparrow(imageLoaded, text)
 				: FlxAtlasFrames.fromTexturePackerJson(imageLoaded, text);

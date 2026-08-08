@@ -13,10 +13,8 @@ import lime.media.AudioBuffer;
 
 import flash.media.Sound;
 import flash.geom.Rectangle;
-import flash.geom.Matrix;
 import flash.geom.Point;
 import flash.display.BitmapData;
-import flash.filters.ColorMatrixFilter;
 
 import haxe.Json;
 import haxe.Exception;
@@ -693,7 +691,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		minimapCanvas.cameras = [camUI];
 		add(minimapCanvas);
 
-		minimapViewport = new FlxSprite(_mmX, 0).makeGraphic(_mmW, 4, 0x44FFFFFF);
+		minimapViewport = new FlxSprite(_mmX, 0).makeGraphic(_mmW, 1, 0x55FFFFFF);
 		minimapViewport.scrollFactor.set();
 		minimapViewport.cameras = [camUI];
 		add(minimapViewport);
@@ -2057,7 +2055,8 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 		if(cachedSectionRow != null && cachedSectionRow.length > 0)
 		{
-			var totalStepsHL:Int = cachedSectionRow[cachedSectionRow.length - 1] + 16;
+			// The final cache entry is already the end row of the last section.
+			var totalStepsHL:Int = cachedSectionRow[cachedSectionRow.length - 1];
 			var hlRowStart:Int = (curSec < cachedSectionRow.length) ? cachedSectionRow[curSec] : 0;
 			var hlRowEnd:Int   = (curSec + 1 < cachedSectionRow.length) ? cachedSectionRow[curSec + 1] : totalStepsHL;
 			var hlY:Float = minimapBg.y + (hlRowStart / totalStepsHL) * _mmH;
@@ -2072,14 +2071,18 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 		if(minimapViewport != null && cachedSectionRow != null && cachedSectionRow.length > 0)
 		{
-			var totalRows:Int = cachedSectionRow[cachedSectionRow.length - 1] + 16;
+			var totalRows:Int = cachedSectionRow[cachedSectionRow.length - 1];
 			var totalGridH:Float = totalRows * GRID_SIZE * curZoom;
 			if(totalGridH > 0)
 			{
 				var vpTop:Float = FlxMath.bound(scrollY / totalGridH, 0, 1);
 				var vpBot:Float = FlxMath.bound((scrollY + FlxG.height) / totalGridH, 0, 1);
-				var vpY:Int  = Std.int(vpTop * _mmH);
-				var vpH:Int  = Std.int(Math.max(4, (vpBot - vpTop) * _mmH));
+				var vpY:Int = Math.round(vpTop * _mmH);
+				// Keep the viewport proportional to Z/X zoom. The previous
+				// 4px minimum made every zoom level from 3x onward look identical.
+				var vpH:Int = Std.int(Math.max(1, Math.round((vpBot - vpTop) * _mmH)));
+				if(vpY >= _mmH) vpY = _mmH - 1;
+				if(vpY + vpH > _mmH) vpH = _mmH - vpY;
 				minimapViewport.y = minimapBg.y + vpY;
 				minimapViewport.x = minimapBg.x;
 				if(Std.int(minimapViewport.height) != vpH)
@@ -2095,7 +2098,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		minimapTimeText.text = FlxStringUtil.formatTime(curSec_, true) + '\n/' + FlxStringUtil.formatTime(totalSec_, true);
 
 		var totalSecs:Int = PlayState.SONG != null ? PlayState.SONG.notes.length : 1;
-		minimapSectionText.text = 'Sec ${curSec + 1}/$totalSecs';
+		minimapSectionText.text = 'Sec ${curSec + 1}/$totalSecs\nZoom ${Math.round(curZoom * 100)}%';
 		var mmRect = minimapBg.getScreenBounds(null, camUI);
 		var mouseOverMM:Bool = mmRect.containsPoint(FlxPoint.weak(FlxG.mouse.screenX, FlxG.mouse.screenY));
 
@@ -2130,7 +2133,8 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		var bmd = minimapCanvas.pixels;
 		bmd.fillRect(bmd.rect, 0x00000000);
 
-		var totalSteps:Int = cachedSectionRow[cachedSectionRow.length - 1] + 16;
+		// _cacheSections() appends a sentinel containing the end row/time.
+		var totalSteps:Int = cachedSectionRow[cachedSectionRow.length - 1];
 		if(totalSteps <= 0) return;
 
 		var totalNoteCols:Int = GRID_PLAYERS * GRID_COLUMNS_PER_PLAYER; // 8
@@ -2138,13 +2142,13 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 		var unitW:Float = _mmW / totalGridCols;
 		var eventW:Int  = SHOW_EVENT_COLUMN ? Std.int(unitW) : 0;
-		var colW:Int    = Std.int(Math.max(2, unitW));
+		// One pixel of padding on each side keeps arrows inside their lane.
+		var markerSize:Int = Std.int(Math.max(3, Math.floor(unitW) - 2));
 
-		for(i in 0...cachedSectionTimes.length)
+		for(i in 0...(cachedSectionRow.length - 1))
 		{
-			var secY:Int    = (i < cachedSectionRow.length) ? Std.int(cachedSectionRow[i] / totalSteps * _mmH) : _mmH;
-			var secEndY:Int = (i + 1 < cachedSectionRow.length)
-				? Std.int(cachedSectionRow[i + 1] / totalSteps * _mmH) : _mmH;
+			var secY:Int    = Std.int(cachedSectionRow[i] / totalSteps * _mmH);
+			var secEndY:Int = Std.int(cachedSectionRow[i + 1] / totalSteps * _mmH);
 			var secH:Int = secEndY - secY;
 			if(secH <= 0) continue;
 
@@ -2155,42 +2159,42 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				_mmW - eventW - Std.int(GRID_COLUMNS_PER_PLAYER * unitW), secH), bgB);
 			if(eventW > 0)
 				bmd.fillRect(new Rectangle(0, secY, eventW, secH), 0xFF1A1A1A);
+
+			// A visible section boundary makes dense note clusters easier to locate.
+			bmd.fillRect(new Rectangle(0, secY, _mmW, 1), 0x44FFFFFF);
 		}
 
 		for(c in 1...totalGridCols)
 		{
-			var xLine:Int     = Std.int(c * unitW);
+			var xLine:Int = Std.int(c * unitW);
 			var lineColor:Int = (c == GRID_COLUMNS_PER_PLAYER + (SHOW_EVENT_COLUMN ? 1 : 0))
-				? 0x66FFFFFF : 0x22FFFFFF;
+				? 0x88FFFFFF : 0x33FFFFFF;
 			bmd.fillRect(new Rectangle(xLine, 0, 1, _mmH), lineColor);
 		}
 
 		if(_minimapNoteCache != null && _minimapNoteCache[0] != null
-			&& _minimapNoteCache[0].width != colW)
+			&& _minimapNoteCache[0].width != markerSize)
 			clearMinimapNoteCache();
-
 		if(_minimapNoteCache == null)
-			_buildMinimapNoteCache(colW);
+			_buildMinimapNoteCache(markerSize);
 
 		var arrowRGB = ClientPrefs.data.arrowRGB;
-		if(PlayState.SONG != null)
+		// Draw from the editor's live list. The chart sections are only synced
+		// from this list when updateChartData() runs during save/export.
+		for(note in notes)
 		{
-			for(section in PlayState.SONG.notes)
-			{
-				if(section == null || section.sectionNotes == null || section.sectionNotes.length == 0) continue;
-				for(rawNote in section.sectionNotes)
-				{
-					if(rawNote == null) continue;
-					var col:Int = Std.int(rawNote[1]);
+			if(note == null || note.isEvent) continue;
+			var col:Int = Std.int(note.songData[1]);
 					// 이벤트 노트(col >= totalNoteCols) 제외, 음수 col 제외
 					if(col < 0 || col >= totalNoteCols) continue;
 
-					var strumTime:Float  = rawNote[0];
-					var sustainLen:Float = rawNote[2];
+					var strumTime:Float  = note.strumTime;
+					var sustainLen:Float = note.sustainLength;
 
 					// strumTime 기준으로 실제 섹션을 이진 탐색 — 저장 섹션과 다를 수 있음
 					var lo:Int = 0;
-					var hi:Int = cachedSectionTimes.length - 1;
+					// Exclude the final end-of-song sentinel from the search.
+					var hi:Int = cachedSectionTimes.length - 2;
 					while(lo < hi) {
 						var mid:Int = (lo + hi + 1) >> 1;
 						if(cachedSectionTimes[mid] <= strumTime) lo = mid;
@@ -2202,27 +2206,29 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 					var secStartTime:Float = cachedSectionTimes[actualSec];
 					var secCrochet:Float   = cachedSectionCrochets[actualSec];
 					var secRowStart:Float  = cachedSectionRow[actualSec];
+					if(secCrochet <= 0) continue;
 
 					var absoluteStep:Float = (strumTime - secStartTime) / secCrochet * 4 + secRowStart;
-					var noteY:Int = Std.int(absoluteStep / totalSteps * _mmH);
+					// Snap the visual marker to the nearest minimap pixel row.
+					var noteY:Int = Math.round(absoluteStep / totalSteps * _mmH);
 					if(noteY < 0 || noteY >= _mmH) continue;
 
-					var isPlayer:Bool = (col < GRID_COLUMNS_PER_PLAYER);
-					var dir:Int       = col % GRID_COLUMNS_PER_PLAYER; // 0-3
-					var localCol:Int  = isPlayer ? col : (col - GRID_COLUMNS_PER_PLAYER);
-					var noteX:Int     = isPlayer
-						? (eventW + Std.int(localCol * unitW))
-						: (eventW + Std.int(GRID_COLUMNS_PER_PLAYER * unitW) + 1 + Std.int(localCol * unitW));
+					var dir:Int = col % GRID_COLUMNS_PER_PLAYER;
+					var gridCol:Int = col + (SHOW_EVENT_COLUMN ? 1 : 0);
+					var laneLeft:Int = Std.int(gridCol * unitW);
+					var laneRight:Int = Std.int((gridCol + 1) * unitW);
+					var laneW:Int = Std.int(Math.max(1, laneRight - laneLeft));
+					var laneCenterX:Int = laneLeft + Std.int(laneW / 2);
+					var baseColor:FlxColor = (arrowRGB != null && dir < arrowRGB.length)
+						? arrowRGB[dir][0] : FlxColor.WHITE;
 
 					if(sustainLen > 0)
 					{
 						var holdPx:Int = Std.int(sustainLen / secCrochet * 4 / totalSteps * _mmH);
 						var holdH:Int  = Std.int(Math.max(1, holdPx));
 						if(noteY + holdH > _mmH) holdH = _mmH - noteY;
-						var barW:Int   = Std.int(Math.max(2, colW - 1));
-						var barX:Int   = noteX + Std.int((colW - barW) / 2);
-						var baseColor:FlxColor = (arrowRGB != null && dir < arrowRGB.length)
-							? arrowRGB[dir][0] : FlxColor.WHITE;
+						var barW:Int = Std.int(Math.max(1, Math.min(2, laneW - 2)));
+						var barX:Int = laneCenterX - Std.int(barW / 2);
 						var holdColor:Int = (0x99 << 24) | (baseColor.red << 16) | (baseColor.green << 8) | baseColor.blue;
 						bmd.fillRect(new Rectangle(barX, noteY, barW, holdH), holdColor);
 					}
@@ -2232,74 +2238,81 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 						var headBmd = _minimapNoteCache[dir];
 						if(headBmd != null)
 						{
-							var sz:Int    = headBmd.width;
+							var sz:Int = headBmd.width;
+							var headX:Int = laneLeft + Std.int((laneW - sz) / 2);
 							var headY:Int = noteY - Std.int(sz / 2);
-							if(headY < 0) headY = 0;
-							var drawH:Int = sz;
+							var sourceY:Int = 0;
+							if(headY < 0)
+							{
+								sourceY = -headY;
+								headY = 0;
+							}
+							var drawH:Int = sz - sourceY;
 							if(headY + drawH > _mmH) drawH = _mmH - headY;
 							if(drawH > 0)
 								bmd.copyPixels(headBmd,
-									new Rectangle(0, 0, sz, drawH),
-									new Point(noteX, headY),
+									new Rectangle(0, sourceY, sz, drawH),
+									new Point(headX, headY),
 									null, null, true);
 						}
 					}
-				}
-			}
 		}
 
 		minimapCanvas.pixels = bmd;
 	}
 
 	
-	function _buildMinimapNoteCache(colW:Int)
+	function _buildMinimapNoteCache(markerSize:Int)
 	{
 		_minimapNoteCache = [null, null, null, null];
 		var palette = ClientPrefs.data.arrowRGB;
+		var sz:Int = Std.int(Math.max(3, markerSize));
+		var center:Float = (sz - 1) / 2;
+		var headH:Int = Std.int(Math.max(3, Math.ceil(sz * 0.65)));
+		var shaftHalf:Float = Math.max(0.5, sz * 0.12);
 
 		for(dir in 0...4)
 		{
-			var tempNote = new objects.Note(0, dir, null, false, true);
-			if(tempNote.width > tempNote.height)
-				tempNote.setGraphicSize(GRID_SIZE);
-			else
-				tempNote.setGraphicSize(0, GRID_SIZE);
-			tempNote.updateHitbox();
+			var color:Int = (palette != null && dir < palette.length)
+				? palette[dir][0] : FlxColor.WHITE;
+			var arrow = new BitmapData(sz, sz, true, 0);
 
-			var frame = tempNote.frame;
-			if(frame == null)
+			// Build a small CPU-side arrow mask. Sampling the regular Note frame
+			// fails when cacheOnGPU has released that texture's CPU pixels.
+			for(y in 0...sz)
 			{
-				tempNote.destroy();
-				continue;
+				for(x in 0...sz)
+				{
+					var upX:Int = x;
+					var upY:Int = y;
+					switch(dir)
+					{
+						case 0: // left
+							upX = y;
+							upY = x;
+						case 1: // down
+							upX = x;
+							upY = sz - 1 - y;
+						case 2: // up
+						case 3: // right
+							upX = y;
+							upY = sz - 1 - x;
+					}
+
+					var filled:Bool;
+					if(upY < headH)
+					{
+						var headHalf:Float = 0.5 + ((headH <= 1) ? 0 : (upY / (headH - 1)) * center);
+						filled = Math.abs(upX - center) <= headHalf;
+					}
+					else
+						filled = Math.abs(upX - center) <= shaftHalf;
+
+					if(filled)
+						arrow.setPixel32(x, y, color);
+				}
 			}
-
-			var srcBmd:BitmapData = frame.paint();
-			tempNote.destroy();
-
-			if(srcBmd == null || srcBmd.width <= 0 || srcBmd.height <= 0) continue;
-
-			var rC:FlxColor = (palette != null && dir < palette.length) ? palette[dir][0] : FlxColor.RED;
-			var gC:FlxColor = (palette != null && dir < palette.length) ? palette[dir][1] : FlxColor.WHITE;
-			var bC:FlxColor = (palette != null && dir < palette.length) ? palette[dir][2] : FlxColor.BLUE;
-
-			var colored = new BitmapData(srcBmd.width, srcBmd.height, true, 0);
-			colored.applyFilter(srcBmd, srcBmd.rect, new Point(0, 0),
-				new ColorMatrixFilter([
-					rC.redFloat,   gC.redFloat,   bC.redFloat,   0, 0,
-					rC.greenFloat, gC.greenFloat, bC.greenFloat, 0, 0,
-					rC.blueFloat,  gC.blueFloat,  bC.blueFloat,  0, 0,
-					0, 0, 0, 1, 0
-				]));
-			srcBmd.dispose();
-
-			var sz:Int = Std.int(Math.max(3, colW + 1));
-			var scaled = new BitmapData(sz, sz, true, 0);
-			var sm = new Matrix();
-			sm.scale(sz / colored.width, sz / colored.height);
-			scaled.draw(colored, sm, null, null, null, true);
-			colored.dispose();
-
-			_minimapNoteCache[dir] = scaled;
+			_minimapNoteCache[dir] = arrow;
 		}
 	}
 

@@ -1685,7 +1685,11 @@ class FunkinLua {
 			var result:Dynamic = null;
 			if(cachedSource != null)
 			{
-				result = LuaL.loadbuffer(lua, cachedSource, cachedSource.length, scriptName);
+				// luaL_loadbuffer expects the UTF-8 byte count, not Haxe's UTF-16
+				// character count. Using String.length truncates scripts containing
+				// non-ASCII text (including comments) when they came from the preload cache.
+				var sourceByteLength:Int = haxe.io.Bytes.ofString(cachedSource).length;
+				result = LuaL.loadbuffer(lua, cachedSource, sourceByteLength, scriptName);
 				if(result == Lua.LUA_OK)
 					result = Lua.pcall(lua, 0, Lua.LUA_MULTRET, 0);
 			}
@@ -1694,8 +1698,11 @@ class FunkinLua {
 			else
 				result = LuaL.dostring(lua, scriptName);
 
-			var resultStr:String = Lua.tostring(lua, result);
-			if(resultStr != null && result != 0) {
+			if(result != Lua.LUA_OK) {
+				// Lua puts load/runtime errors at the top of the stack. "result" is
+				// an error code, not a stack index.
+				var resultStr:String = Lua.tostring(lua, -1);
+				if(resultStr == null) resultStr = 'Unknown Lua error (code $result)';
 				trace(resultStr);
 				#if windows
 				lime.app.Application.current.window.alert(resultStr, 'Error on lua script!');

@@ -15,7 +15,7 @@ enum MainMenuColumn {
 class MainMenuState extends MusicBeatState
 {
 	public static var psychEngineVersion:String = '1.0.4'; // This is also used for Discord RPC
-	public static var twopEngineVersion:String = '0.0.1';
+	public static var twopEngineVersion:String = '0.1';
 	public static var curSelected:Int = 0;
 	public static var curColumn:MainMenuColumn = CENTER;
 	var allowMouse:Bool = true; //Turn this off to block mouse movement in menus
@@ -95,7 +95,7 @@ class MainMenuState extends MusicBeatState
 			rightItem.x -= rightItem.width;
 		}
 
-		var twopVer:FlxText = new FlxText(12, FlxG.height - 44, 0, "퉆잎퉆잎엔진 v" + twopEngineVersion, 12);
+		var twopVer:FlxText = new FlxText(12, FlxG.height - 44, 0, "2P Engine v" + twopEngineVersion, 12);
 		twopVer.scrollFactor.set();
 		twopVer.setFormat(Paths.font("DungGeunMo.ttf"), 16, 0xff21c47d, LEFT, FlxTextBorderStyle.OUTLINE, 0xff27352f);
 		add(twopVer);
