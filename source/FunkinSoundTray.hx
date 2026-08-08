@@ -5,6 +5,7 @@ import openfl.display.Bitmap;
 import openfl.utils.AssetType;
 import openfl.utils.Assets;
 import flixel.FlxG;
+import flixel.system.frontEnds.FunkinSoundFrontEnd;
 import backend.Paths;
 
 class FunkinSoundTray extends FlxSoundTray
@@ -117,7 +118,8 @@ class FunkinSoundTray extends FlxSoundTray
 
 	function getGlobalVolume(up:Bool = false):Int
 	{
-		var globalVolume:Int = Math.round(FlxG.sound.volume * 10);
+		var soundFrontEnd:FunkinSoundFrontEnd = cast FlxG.sound;
+		var globalVolume:Int = Math.round(soundFrontEnd.logToLinear(FlxG.sound.volume) * 10);
 
 		if (FlxG.sound.muted || FlxG.sound.volume == 0)
 			globalVolume = 0;
