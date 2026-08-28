@@ -1470,7 +1470,6 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			}
 		}
 
-		// E = 서스테인 늘리기, Q = 서스테인 줄이기 (선택된 노트에 적용)
 		if(PsychUIInputText.focusOn == null && lastFocus == null && !isMovingNotes)
 		{
 			var holdE:Bool = FlxG.keys.pressed.E && !FlxG.keys.pressed.CONTROL;
@@ -1500,7 +1499,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 				else if(_sustainHoldTimer >= 0.35)
 				{
 					_sustainHoldAccum += elapsed;
-					final repeatInterval:Float = 1.0 / 10.0; // 초당 10스텝
+					final repeatInterval:Float = 1.0 / 10.0;
 					while(_sustainHoldAccum >= repeatInterval)
 					{
 						_sustainHoldAccum -= repeatInterval;
@@ -1510,13 +1509,32 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 
 				if(stepsThisFrame > 0)
 				{
-					var stepCrochet:Float = cachedSectionCrochets[curSec] / 4;
-					var delta:Float = (holdE ? 1 : -1) * stepCrochet * stepsThisFrame;
-					for(note in selectedNotes)
+					final stepMult:Int = FlxG.keys.pressed.SHIFT ? 4 : 1;
+					for (i in 0...stepsThisFrame)
 					{
-						if(note.isEvent) continue;
-						note.setSustainLength(note.sustainLength + delta, stepCrochet, curZoom);
+						for(note in selectedNotes)
+						{
+							if(note.isEvent) continue;
+
+							var noteSec:Int = 0;
+							while(cachedSectionTimes.length > noteSec + 1 && cachedSectionTimes[noteSec + 1] <= note.strumTime)
+								noteSec++;
+
+							var stepCrochet:Float = cachedSectionCrochets[noteSec] / 4;
+							var delta:Float = stepCrochet * stepMult;
+							if(holdE)
+								delta = note.sustainLength <= 0 ? stepCrochet * 2 * stepMult : delta;
+							else
+							{
+								delta = -delta;
+								if(note.sustainLength + delta < 0) delta = -note.sustainLength;
+							}
+
+							note.setSustainLength(note.sustainLength + delta, stepCrochet, curZoom);
+						}
 					}
+					if(selectedNotes.length == 1 && !selectedNotes[0].isEvent)
+						susLengthStepper.value = selectedNotes[0].sustainLength;
 					minimapDirty = true;
 				}
 			}
@@ -1907,34 +1925,13 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 		{
 			noteSelectionSine += elapsed;
 			var sineValue:Float = 0.75 + Math.cos(Math.PI * noteSelectionSine * (isMovingNotes ? 8 : 2)) / 4;
-			//trace(sineValue);
 
-			var qPress = FlxG.keys.justPressed.Q;
-			var ePress = FlxG.keys.justPressed.E;
-			var addSus = (FlxG.keys.pressed.SHIFT ? 4 : 1) * (Conductor.stepCrochet / 2);
-			if(qPress) addSus *= -1;
-
-			if(qPress != ePress && selectedNotes.length != 1)
-				susLengthStepper.value += addSus;
-
-			var noteSec:Int = 0;
 			for (note in selectedNotes)
 			{
 				if(note == null || !note.exists) continue;
 
 				if(!note.isEvent)
-				{
-					if(qPress != ePress)
-					{
-						while(cachedSectionTimes.length > noteSec + 1 && cachedSectionTimes[noteSec + 1] <= note.strumTime)
-							noteSec++;
-
-						note.setSustainLength(note.sustainLength + addSus, cachedSectionCrochets[noteSec] / 4, curZoom);
-						if(selectedNotes.length == 1)
-							susLengthStepper.value = note.sustainLength;
-					}
-					note.animation.update(elapsed); //let selected notes be animated for better visibility
-				}
+					note.animation.update(elapsed);
 				note.colorTransform.redMultiplier = note.colorTransform.greenMultiplier = note.colorTransform.blueMultiplier = sineValue;
 			}
 		}
@@ -2868,7 +2865,7 @@ class ChartingState extends MusicBeatState implements PsychUIEventHandler.PsychU
 			beatsPerSecStepper.value = sec.sectionBeats;
 
 			strumTimeStepper.step = Conductor.stepCrochet;
-			susLengthStepper.step = cachedSectionCrochets[curSec] / 4 / 2;
+			susLengthStepper.step = cachedSectionCrochets[curSec] / 4;
 			susLengthStepper.max = susLengthStepper.step * 128;
 			if(selectedNotes.length > 1) susLengthStepper.min = -susLengthStepper.max;
 			else susLengthStepper.min = 0;
